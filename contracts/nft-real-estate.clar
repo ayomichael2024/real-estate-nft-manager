@@ -105,3 +105,65 @@
         (map-set burned-status token-id true)
         (ok true)))
 
+(define-public (update-token-metadata (token-id uint) (new-uri (string-ascii 256)))
+    (begin
+        (let ((token-owner (unwrap! (nft-get-owner? real-estate-token token-id) err-token-missing)))
+            (asserts! (is-eq token-owner tx-sender) err-invalid-owner)
+            (asserts! (is-valid-uri new-uri) err-invalid-uri)
+            (map-set token-metadata token-id new-uri)
+            (ok true))))
+
+(define-public (transfer-token (token-id uint) (recipient principal))
+(begin
+    ;; Get the current owner of the token
+    (let ((current-owner (unwrap! (nft-get-owner? real-estate-token token-id) err-token-missing)))
+        ;; Ensure the caller is the current owner of the token
+        (asserts! (is-eq tx-sender current-owner) err-invalid-owner)
+
+        ;; Prevent transfer if the token is already burned
+        (asserts! (not (is-token-already-burned token-id)) err-token-burned)
+
+        ;; Transfer the token
+        (try! (nft-transfer? real-estate-token token-id tx-sender recipient))
+        (ok true)
+    )
+))
+
+;; Secure function to update token metadata with access control
+(define-public (secure-update-token-metadata (token-id uint) (new-uri (string-ascii 256)))
+    (begin
+        ;; Ensure the caller is the token owner
+        (let ((token-owner (unwrap! (nft-get-owner? real-estate-token token-id) err-token-missing)))
+            (asserts! (is-eq token-owner tx-sender) err-invalid-owner)
+
+            ;; Validate new URI before updating
+            (asserts! (is-valid-uri new-uri) err-invalid-uri)
+
+            ;; Update metadata
+            (map-set token-metadata token-id new-uri)
+
+            (ok true))))
+
+;; Read-Only Functions
+(define-read-only (get-token-metadata (token-id uint))
+    (ok (map-get? token-metadata token-id)))
+
+(define-read-only (get-token-owner (token-id uint))
+    (ok (nft-get-owner? real-estate-token token-id)))
+
+(define-read-only (get-last-token-id)
+    (ok (var-get current-token-id)))
+
+(define-read-only (is-token-burned (token-id uint))
+    (ok (is-token-already-burned token-id)))
+
+(define-read-only (get-token-batch (start-id uint) (batch-count uint))
+    (ok (map uint-to-token-info 
+        (unwrap-panic (as-max-len? 
+            (list-tokens start-id batch-count) 
+            u100)))))
+
+;; Contract initialization
+(begin
+    (var-set current-token-id u0))
+
